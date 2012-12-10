@@ -1674,16 +1674,283 @@ def generate_scene_objects_string(scene):
     return "\n".join(object_list), object_count
 
 # #####################################################
-# Parse - Geometry (non-scene output) 
+# Parse - Animation
 # #####################################################
-def extract_geometry(scene, filename):
-    mesh_string = generate_mesh_string_for_non_scene_output(scene)
-    return mesh_string
+def extract_animation(scene):
+    global_settings = scene.GetGlobalSettings()
+
+    time_span = global_settings.GetTimelineDefaultTimeSpan() 
+    start_time = time_span.GetStart()
+    stop_time = time_span.GetStop()
+    frame_time = FbxTime()
+    frame_time.SetTime(0, 0, 0, 1, 0, global_settings.GetTimeMode())
+
+    current_time = time_span.GetStart() 
+    current_time += frame_time 
+    current_time += frame_time 
+
+    print ''
+    print 'Animation'
+    print 'start time: %s' % start_time.GetSecondDouble()
+    print 'stop time: %s' % stop_time.GetSecondDouble()
+    print 'frame time: %s' % frame_time.GetSecondDouble()
+    print 'current time: %s' % current_time.GetSecondDouble()
+    print ''
+
+    node = scene.GetRootNode()
+    pose = scene.GetPose(0)
+    stack = scene.GetSrcObject(FbxAnimStack.ClassId, 0)
+    layer = stack.GetSrcObject(FbxAnimLayer.ClassId, 0)
+
+    print stack.GetName()
+
+    dummy_transform = FbxAMatrix()
+    extract_animation_recursive(node, layer, pose, dummy_transform, current_time)
+
+def extract_animation_recursive(node, layer, pose, parent_transform, time):
+    global_transform = get_global_transform(node, time, pose, parent_transform)
+    
+    if node.GetNodeAttribute():
+        # Geometry offset
+        # It is not inherited by the children
+        geometry_offset = get_geometry_transform(node)
+        global_offset = global_transform * geometry_offset
+
+        extract_node_animation(node, layer, pose, parent_transform, global_offset, time)
+
+    child_count = node.GetChildCount()
+    for i in range(child_count):
+        extract_animation_recursive(node.GetChild(i), layer, pose, global_transform, time)
+
+def extract_node_animation(node, layer, pose, parent_transform, global_transform, time):
+
+    if node.GetNodeAttribute() == None:
+        pass
+    else:
+        attribute_type = node.GetNodeAttribute().GetAttributeType()
+        if attribute_type == FbxNodeAttribute.eMesh:
+            extract_mesh_animation(node, layer, pose, global_transform, time)
+        elif attribute_type == FbxNodeAttribute.eLight:
+            pass
+        elif attribute_type == FbxNodeAttribute.eCamera:
+            pass
+        elif attribute_type == FbxNodeAttribute.eSkeleton:
+            pass
+        elif attribute_type == FbxNodeAttribute.eMarker:
+            pass
+        elif attribute_type == FbxNodeAttribute.eNull:
+            pass
+        else:
+            pass
+
+def extract_mesh_animation(node, layer, pose, global_transform, time):
+    mesh = node.GetNodeAttribute()
+    
+    hasVertexCache = mesh.GetDeformerCount(FbxDeformer.eVertexCache) > 0
+    hasShape = mesh.GetShapeCount() > 0
+    hasSkin = mesh.GetDeformerCount(FbxDeformer.eSkin) > 0
+    hasDeformation = hasVertexCache or hasShape or hasSkin
+
+    if hasDeformation:
+        
+        if hasVertexCache:
+            pass
+        
+        skin_count = mesh.GetDeformerCount(FbxDeformer.eSkin)
+        cluster_count = 0
+
+        for i in range(skin_count):
+            cluster_count += mesh.GetDeformer(i, FbxDeformer.eSkin).GetClusterCount()
+
+        if cluster_count > 0:
+            generate_skin_deformation(mesh, pose, global_transform, time)
+
+def generate_skin_deformation(mesh, pose, global_transform, time):
+    skin_deformer = mesh.GetDeformer(0, FbxDeformer.eSkin)
+    skinning_type = skin_deformer.GetSkinningType()
+
+    print mesh.GetName()
+
+    if skinning_type == FbxSkin.eLinear or skinning_type == FbxSkin.eRigid:
+        print 'Linear'   
+        generate_linear_deformation(mesh, pose, global_transform, time)
+    elif skinning_type == FbxSkin.eDualQuaternion:
+        print 'DualQuaternion'
+    elif skinning_type == FbxSkin.eBlend:
+        print 'Blend'
+
+def generate_linear_deformation(mesh, pose, global_transform, time):
+    cluster_mode = mesh.GetDeformer(0, FbxDeformer.eSkin).GetCluster(0).GetLinkMode()
+
+    skin_count = mesh.GetDeformerCount()
+    for i in range(skin_count):
+        skin_deformer = mesh.GetDeformer(i, FbxDeformer.eSkin)
+
+        cluster_count = skin_deformer.GetClusterCount()
+        for j in range(cluster_count):
+            cluster = skin_deformer.GetCluster(j)
+
+            if not cluster.GetLink():
+                continue
+
+            transform = generate_cluster_deformation(mesh, pose, cluster, global_transform, time)
+
+            t = transform.GetT()
+            r = getRadians(transform.GetR())
+            s = transform.GetS()
+
+            print ''
+            print 'pos: ' + Vector3String(t)
+            print 'rot: ' + Vector3String(r)
+            print 'scl: ' + Vector3String(s)
+
+def generate_cluster_deformation(mesh, pose, cluster, global_transform, time):
+    cluster_mode = cluster.GetLinkMode()
+
+    reference_global_init_transform = FbxAMatrix()
+    reference_global_current_transform = FbxAMatrix()
+    associate_global_init_transform = FbxAMatrix()
+    associate_global_current_transform = FbxAMatrix()
+    cluster_global_init_transform = FbxAMatrix()
+    cluster_global_current_transform = FbxAMatrix()
+
+    reference_geometry_transform = FbxAMatrix()
+    associate_geometry_transform = FbxAMatrix()
+    cluster_geometry_transform = FbxAMatrix()
+
+    cluster_relative_init_transform = FbxAMatrix()
+    cluster_relative_current_transform_inv = FbxAMatrix()
+
+    vertex_transform = None
+
+    if cluster_mode == FbxCluster.eAdditive and cluster.GetAssociateModel():
+        cluster.GetTransformAssociateModelMatrix(associate_global_init_transform)
+
+        # Geometric transform of the model
+        associate_geometry_transform = get_geometry_transform(cluster.GetAssociateModel())
+        associate_global_init_transform *= associate_geometry_transform()
+        associate_global_current_transform = global_transform 
+
+        cluster.GetTransfomMatrix(reference_global_init_transform)
+
+        # Multiply reference_global_init_transform by Geometric Transformation 
+        reference_geometry_transform = get_geometry_transform(mesh.GetNode())
+        reference_global_init_transform *= reference_geometry_transform
+        reference_global_current_transform = global_transform
+
+        # Get the link initial global position and the link current global position
+        cluster.GetTransformLinkMatrix(cluster_global_init_transform)
+
+        # Multiply cluster_global_init_transform by Geometric Transformation
+        cluster_geometry_transform = get_geometry_transform(cluster.GetLink())
+        cluster_global_init_transform *= cluster_geometry_transform
+        cluster_global_current_transform = get_global_transform(cluster.GetLink(), time, pose)
+        
+        # Compute the shift of the link relative to the reference
+        # ModelM-1 * AssoM * AssoGX-1 * LinkGX * LinkM-1*ModelM
+        vertex_transform = reference_global_init_transform.Inverse() \
+                         * associate_global_init_transform \
+                         * associate_global_current_transform.Inverse() \
+                         * cluster_global_current_transform \
+                         * cluster_global_init_transform.Inverse() \
+                         * reference_global_init_transform
+
+    else:
+        cluster.GetTransformMatrix(reference_global_init_transform)
+        reference_global_current_transform = global_transform 
+
+        # Multiply reference_global_init_transform by Geometric Transformation
+        reference_geometry_transform = get_geometry_transform(mesh.GetNode())
+        reference_global_init_transform *= reference_geometry_transform
+
+        # Get the link initial global position and the link current global position
+        cluster.GetTransformLinkMatrix(cluster_global_init_transform)
+        cluster_global_current_transform = get_global_transform(cluster.GetLink(), time, pose)
+
+        # Compute the initial position of the link relative to the reference
+        cluster_relative_init_transform = cluster_global_init_transform.Inverse() * reference_global_init_transform
+
+        # Compute the current position of the link relative to the reference
+        cluster_relative_current_transform_inv = reference_global_current_transform.Inverse() * cluster_global_current_transform
+
+        # Compute the shift of the link relative to the reference
+        vertex_transform = cluster_relative_current_transform_inv * cluster_relative_init_transform
+
+    return vertex_transform
+
+def get_global_transform(node, time, pose = None, parent_transform = None):
+    global_transform = None
+
+    if pose:
+        node_index = pose.Find(node)
+        if node_index > -1:
+            # The bind pose is always a global matrix.
+            # If we have a rest pose, we need to check if it is stored in global or local space.
+            if pose.IsBindPose() or not pose.IsLocalMatrix(node_index):
+                global_transform = get_pose_matrix(pose, node_index)
+            else:
+                # We have a local matrix, we need to convert it to a global space matrix
+                if not parent_transform:
+                    if node.GetParent():
+                        parent_transform = get_global_transform(node.GetParent(), time, pose)
+
+                local_transform = get_pose_matrix(pose, node_index)
+                global_transform = parent_transform * local_transform
+
+    if not global_transform:
+        # There is no pose entry for that node, get the current global position instead.
+
+        # Ideally this would use parent global position and local position to compute the global position.
+        # Unfortunately the equation 
+        #      global_transform = parent_transform * local_transform
+        # does not hold when inheritance type is other than "Parent" (RSrs).
+        # To compute the parent rotation and scaling is tricky in the RrSs and Rrs cases.
+        global_transform = node.EvaluateGlobalTransform(time)
+
+    return global_transform
+
+def get_pose_matrix(pose, index):
+    matrix = pose.GetMatrix(index)
+    pose_matrix = FbxAMatrix()
+
+    t = FbxVector4()
+    r = FbxQuaternion()
+    sh = FbxVector4()
+    sc = FbxVector4()
+
+    matrix.GetElements(t,r,sh,sc)
+
+    pose_matrix.SetTQS(t,r,sc)
+
+#    FbxAMatrix.SetRow() does not work on the python SDK 
+#    The cpp ViewScene sample does a direct memcpy
+
+#    a = matrix.GetRow(0)
+#    b = matrix.GetRow(1)
+#    c = matrix.GetRow(2)
+#    d = matrix.GetRow(3)
+#    
+#    pose_matrix.SetRow(0, a)
+#    pose_matrix.SetRow(1, b)
+#    pose_matrix.SetRow(2, c)
+#    pose_matrix.SetRow(3, d)
+
+    return pose_matrix
+
+def get_geometry_transform(node):
+    t = node.GetGeometricTranslation(FbxNode.eSourcePivot)
+    r = node.GetGeometricRotation(FbxNode.eSourcePivot)
+    s = node.GetGeometricScaling(FbxNode.eSourcePivot)
+    matrix = FbxAMatrix()
+    matrix.SetTRS(t,r,s)
+    return matrix
 
 # #####################################################
 # Parse - Scene (scene output)
 # #####################################################
 def extract_scene(scene, filename):
+    extract_animation(scene)
+
     global_settings = scene.GetGlobalSettings()
     objects, nobjects = generate_scene_objects_string(scene)
 
@@ -1798,6 +2065,13 @@ def extract_scene(scene, filename):
     ]
 
     return "\n".join(output)
+
+# #####################################################
+# Parse - Geometry (non-scene output) 
+# #####################################################
+def extract_geometry(scene, filename):
+    mesh_string = generate_mesh_string_for_non_scene_output(scene)
+    return mesh_string
 
 # #####################################################
 # file helpers
