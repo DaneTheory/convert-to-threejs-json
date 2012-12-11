@@ -1691,8 +1691,6 @@ def extract_animation(scene):
     frame_time.SetTime(0, 0, 0, 1, 0, global_settings.GetTimeMode())
 
     current_time = time_span.GetStart() 
-    current_time += frame_time 
-    current_time += frame_time 
 
     print ''
     print 'Animation'
@@ -1717,10 +1715,11 @@ def extract_animation(scene):
         print '\nis pose 0 a bind pose? %s' % pose.IsBindPose()
     pose = None
 
-    print '\ncurrent time: %s' % current_time.GetSecondDouble()
-
     dummy_transform = FbxAMatrix()
-    extract_animation_recursive(node, layer, pose, dummy_transform, current_time)
+    while current_time <= stop_time:
+        print '\ncurrent time: %s' % current_time.GetSecondDouble()
+        extract_animation_recursive(node, layer, pose, dummy_transform, current_time)
+        current_time += frame_time
 
 def extract_animation_recursive(node, layer, pose, parent_transform, time):
     global_transform = get_global_transform(node, time, pose, parent_transform)
@@ -1814,11 +1813,7 @@ def generate_linear_deformation(mesh, pose, global_transform, time):
             r = getRadians(transform.GetR())
             s = transform.GetS()
 
-            print ''
-            print cluster.GetLink().GetName()
-            print 'pos: ' + Vector3String(t, False, True)
-            print 'rot: ' + Vector3String(r, False, True)
-            print 'scl: ' + Vector3String(s, False, True)
+            print cluster.GetLink().GetName().ljust(20)[:20] + ' pos: ' + Vector3String(t, False, True) + ' rot: ' + Vector3String(r, False, True) + ' scl: ' + Vector3String(s, False, True)
 
 def generate_cluster_deformation(mesh, pose, cluster, global_transform, time):
     cluster_mode = cluster.GetLinkMode()
