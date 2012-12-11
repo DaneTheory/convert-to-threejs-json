@@ -14,6 +14,7 @@ option_prefix = True
 option_geometry = False
 option_default_camera = False
 option_default_light = False
+option_animation = False
 
 converter = None
 global_up_vector = None
@@ -21,13 +22,17 @@ global_up_vector = None
 # #####################################################
 # Templates
 # #####################################################
-def Vector2String(v, no_brackets = False):
+def Vector2String(v, no_brackets = False, round_vector = False):
+    if round_vector:
+        v = (round(v[0], 5), round(v[1], 5))
     if no_brackets:
         return '%g,%g' % (v[0], v[1])
     else:
         return '[ %g, %g ]' % (v[0], v[1])
 
-def Vector3String(v, no_brackets = False):
+def Vector3String(v, no_brackets = False, round_vector = False):
+    if round_vector:
+        v = (round(v[0], 5), round(v[1], 5), round(v[1], 5))
     if no_brackets:
         return '%g,%g,%g' % (v[0], v[1], v[2])
     else:
@@ -1236,7 +1241,7 @@ def generate_mesh_list_from_hierarchy(node, mesh_list):
             mesh_list.append(node.GetNodeAttribute())
 
     for i in range(node.GetChildCount()):
-        generate_embed_list_from_hierarchy(node.GetChild(i), mesh_list)
+        generate_mesh_list_from_hierarchy(node.GetChild(i), mesh_list)
 
 def generate_mesh_list(scene):
     mesh_list = []
@@ -1694,15 +1699,25 @@ def extract_animation(scene):
     print 'start time: %s' % start_time.GetSecondDouble()
     print 'stop time: %s' % stop_time.GetSecondDouble()
     print 'frame time: %s' % frame_time.GetSecondDouble()
-    print 'current time: %s' % current_time.GetSecondDouble()
     print ''
 
     node = scene.GetRootNode()
-    pose = scene.GetPose(0)
-    stack = scene.GetSrcObject(FbxAnimStack.ClassId, 0)
-    layer = stack.GetSrcObject(FbxAnimLayer.ClassId, 0)
 
+    # The animation layer is a collection of animation curve nodes
+    stack = scene.GetSrcObject(FbxAnimStack.ClassId, 0)
+    print '%s animation stacks' % scene.GetSrcObjectCount(FbxAnimStack.ClassId)
+
+    # The animation stack is a collection of animation layers
+    layer = stack.GetSrcObject(FbxAnimLayer.ClassId, 0)
+    print '%s animation layers' % scene.GetSrcObjectCount(FbxAnimLayer.ClassId)
     print stack.GetName()
+
+    pose = scene.GetPose(0)
+    if pose:
+        print '\nis pose 0 a bind pose? %s' % pose.IsBindPose()
+    pose = None
+
+    print '\ncurrent time: %s' % current_time.GetSecondDouble()
 
     dummy_transform = FbxAMatrix()
     extract_animation_recursive(node, layer, pose, dummy_transform, current_time)
@@ -1800,9 +1815,10 @@ def generate_linear_deformation(mesh, pose, global_transform, time):
             s = transform.GetS()
 
             print ''
-            print 'pos: ' + Vector3String(t)
-            print 'rot: ' + Vector3String(r)
-            print 'scl: ' + Vector3String(s)
+            print cluster.GetLink().GetName()
+            print 'pos: ' + Vector3String(t, False, True)
+            print 'rot: ' + Vector3String(r, False, True)
+            print 'scl: ' + Vector3String(s, False, True)
 
 def generate_cluster_deformation(mesh, pose, cluster, global_transform, time):
     cluster_mode = cluster.GetLinkMode()
@@ -1949,7 +1965,8 @@ def get_geometry_transform(node):
 # Parse - Scene (scene output)
 # #####################################################
 def extract_scene(scene, filename):
-    extract_animation(scene)
+    if option_animation:
+        extract_animation(scene)
 
     global_settings = scene.GetGlobalSettings()
     objects, nobjects = generate_scene_objects_string(scene)
@@ -2110,6 +2127,7 @@ if __name__ == "__main__":
     parser.add_option('-x', '--no-textures', action='store_true', dest='notextures', help="don't include texture references in output file", default=False)
     parser.add_option('-p', '--prefix', action='store_true', dest='prefix', help="prefix object names in output file", default=False)
     parser.add_option('-g', '--geometry-only', action='store_true', dest='geometry', help="output geometry only", default=False)
+    parser.add_option('-a', '--animation', action='store_true', dest='animation', help="export animation data (currently debug only)", default=False)
     parser.add_option('-c', '--default-camera', action='store_true', dest='defcamera', help="include default camera in output scene", default=False)
     parser.add_option('-l', '--defualt-light', action='store_true', dest='deflight', help="include default light in output scene", default=False)
 
@@ -2121,6 +2139,7 @@ if __name__ == "__main__":
     option_geometry = options.geometry 
     option_default_camera = options.defcamera 
     option_default_light = options.deflight 
+    option_animation = options.animation 
 
     # Prepare the FBX SDK.
     sdk_manager, scene = InitializeSdkObjects()
