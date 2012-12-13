@@ -4,6 +4,7 @@ import os
 import sys
 import math
 import operator
+import re
 
 # #####################################################
 # Globals
@@ -40,7 +41,9 @@ def ColorString(c, no_brackets = False):
         return '[ %g, %g, %g ]' % (c[0], c[1], c[2])
 
 def LabelString(s):
-    return '"%s"' % s
+    s = s.replace('\\','\\\\')
+    s = s.replace('"','\\"')
+    return '"%s"' % s 
 
 def ArrayString(s):
     return '[ %s ]' % s
@@ -222,8 +225,8 @@ def generate_texture_bindings(material_property, texture_list):
                 for k in range(texture_count):
                     texture = layered_texture.GetSrcObject(FbxTexture.ClassId,k)
                     if texture:
-                        texture_id = getTextureName(texture, True) 
-                        texture_binding = '		"%s": "%s",' % (binding_types[str(material_property.GetName())], texture_id)
+                        texture_id = LabelString( getTextureName(texture, True) )
+                        texture_binding = '		"%s": %s,' % (binding_types[str(material_property.GetName())], texture_id)
                         texture_list.append(texture_binding)
         else:
             # no layered texture simply get on the property
@@ -231,8 +234,8 @@ def generate_texture_bindings(material_property, texture_list):
             for j in range(texture_count):
                 texture = material_property.GetSrcObject(FbxTexture.ClassId,j)
                 if texture:
-                    texture_id = getTextureName(texture, True) 
-                    texture_binding = '		"%s": "%s",' % (binding_types[str(material_property.GetName())], texture_id)
+                    texture_id = LabelString( getTextureName(texture, True) )
+                    texture_binding = '		"%s": %s,' % (binding_types[str(material_property.GetName())], texture_id)
                     texture_list.append(texture_binding)
 
 def generate_material_string(material):
@@ -406,7 +409,7 @@ def generate_texture_string(texture):
     output = [
 
     '\t' + LabelString( getTextureName( texture, True ) ) + ': {',
-    '	"url"    : "' + texture.GetFileName() + '",',
+    '	"url"    : ' + LabelString( texture.GetFileName() ) + ',',
     '	"repeat" : ' + Vector2String( (1,1) ) + ',',
     '	"offset" : ' + Vector2String( texture.GetUVTranslation() ) + ',',
     '	"magFilter" : ' + LabelString( "LinearFilter" ) + ',',
