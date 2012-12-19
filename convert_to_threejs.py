@@ -787,11 +787,43 @@ def generate_mesh_string_for_scene_output(node):
     faces    = ",".join(faces)
     uvs      = generate_uvs(uv_values)
 
+    if option_animation:
+        skinning_weights, skinning_offsets = process_mesh_skin_weights(mesh_list)
+      
+        skinning_indices = []
+        skeleton_hierarchy = process_mesh_skeleton_hierarchy(scene, mesh_list)
+        for i in range(len(skinning_weights)):
+            vertex_weights = skinning_weights[i]
+            for j in range(len(vertex_weights)):
+                weight = vertex_weights[j]
+                if weight[0] > 0:
+                    node = weight[1].GetLink()
+                    for k in range(len(skeleton_hierarchy)):
+                        bone = skeleton_hierarchy[k]
+                        if bone == node:
+                            skinning_indices.append(k)
+                else:
+                    skinning_indices.append(0)
+
+        print ArrayString(",".join(n.GetName() for n in skeleton_hierarchy))
+
+        nskinning_weights = len(skinning_weights) * 2
+        nskinning_indices = len(skinning_indices)
+        weights  = ",".join(str(round(w[0],6)) for l in skinning_weights for w in l)
+        indices  = ",".join(str(i) for i in skinning_indices)
+    else:
+        nskinning_weights = 0
+        nskinning_indices = 0
+        weights = ""
+        indices = ""
+
     output = [
 
     '\t' + LabelString( getEmbedName( node, True ) ) + ' : {',
     '	"metadata"  : {',
     '		"vertices" : ' + str(nvertices) + ',',
+    '		"skinWeights" : ' + str(nskinning_weights) + ',',
+    '		"skinIndices" : ' + str(nskinning_indices) + ',',
     '		"normals" : ' + str(nnormals) + ',',
     '		"colors" : ' + str(ncolors) + ',',
     '		"faces" : ' + str(nfaces) + ',',
@@ -807,6 +839,8 @@ def generate_mesh_string_for_scene_output(node):
     '	"normals" : ' + ArrayString(normals) + ',',   
     '	"colors" : ' + ArrayString(colors) + ',',   
     '	"uvs" : ' + ArrayString(uvs) + ',',   
+    '	"skinWeights" : ' + ArrayString(weights) + ',',   
+    '	"skinIndices" : ' + ArrayString(indices) + ',',   
     '	"faces" : ' + ArrayString(faces),
     '}'
 
@@ -1069,6 +1103,7 @@ def process_mesh_vertices(mesh_list):
         vertex_offset_list.append(vertex_offset)
 
     return vertices, vertex_offset_list
+
 
 def process_mesh_materials(mesh_list):
     material_offset = 0
@@ -1684,6 +1719,30 @@ def generate_scene_objects_string(scene):
 # #####################################################
 # Parse - Animation
 # #####################################################
+def generate_skeleton_list_from_hierarchy(node, skeleton_list):
+    if node.GetNodeAttribute() == None:
+        pass
+    else:
+        attribute_type = (node.GetNodeAttribute().GetAttributeType())
+        if attribute_type == FbxNodeAttribute.eSkeleton:
+            skeleton_list.append(node)
+            return
+    for i in range(node.GetChildCount()):
+        generate_skeleton_list_from_hierarchy(node.GetChild(i), skeleton_list)
+
+def generate_skeleton_list(scene):
+    skeleton_list = []
+    node = scene.GetRootNode()
+    if node:
+        for i in range(node.GetChildCount()):
+            generate_skeleton_list_from_hierarchy(node.GetChild(i), skeleton_list)
+    return skeleton_list
+
+def generate_bone_list_from_hierarchy(node, bone_list):
+    bone_list.append(node)
+    for i in range(node.GetChildCount()):
+        generate_bone_list_from_hierarchy(node.GetChild(i), bone_list)
+
 def extract_animation(scene):
     global_settings = scene.GetGlobalSettings()
 
@@ -1717,6 +1776,8 @@ def extract_animation(scene):
     if pose:
         print '\nis pose 0 a bind pose? %s' % pose.IsBindPose()
     pose = None
+
+    return
 
     dummy_transform = FbxAMatrix()
     while current_time <= stop_time:
@@ -1958,6 +2019,96 @@ def get_geometry_transform(node):
     matrix = FbxAMatrix()
     matrix.SetTRS(t,r,s)
     return matrix
+
+# #####################################################
+# Parse - Skinning
+# #####################################################
+def extract_fbx_skinning_data(mesh):
+    cluster_mode_types = [ "Normalize", "Additive", "Total1" ]
+
+    control_points_count = mesh.GetControlPointsCount()
+    skin_count = mesh.GetDeformerCount(FbxDeformer.eSkin)
+
+    mesh_weights = []
+    for i in range(control_points_count):
+        mesh_weights.append([])
+
+    for i in range(skin_count):
+        cluster_count = mesh.GetDeformer(i, FbxDeformer.eSkin).GetClusterCount()
+
+        for j in range(cluster_count):
+            cluster = mesh.GetDeformer(i, FbxDeformer.eSkin).GetCluster(j)
+            cluster_mode = cluster_mode_types[cluster.GetLinkMode()]
+
+            indices = cluster.GetControlPointIndices()
+            weights = cluster.GetControlPointWeights()
+
+            for k in range(len(indices)):
+                weight = weights[k]
+                control_point_index = indices[k]
+
+                weight_mapping = (weight, cluster)
+
+                vertex_weights = mesh_weights[control_point_index]
+                vertex_weights.append(weight_mapping)
+                mesh_weights[control_point_index] = sorted(vertex_weights, reverse=True)
+
+    # Three.js only supports 2 weights per vertex
+    for i in range(control_points_count):
+        vertex_weights = mesh_weights[i]
+        vertex_weights = vertex_weights[0:2]
+
+        for j in range(2 - len(vertex_weights)):
+            vertex_weights.append((0, None))
+
+        a = vertex_weights[0][0]
+        b = vertex_weights[1][0]
+        length = math.sqrt(a + b)
+        a = a / length
+        b = b / length
+        vertex_weights[0] = (a, vertex_weights[0][1])
+        vertex_weights[1] = (b, vertex_weights[1][1])
+
+        mesh_weights[i] = vertex_weights
+
+    return mesh_weights
+
+def process_mesh_skin_weights(mesh_list):
+    vertex_offset = 0
+    vertex_offset_list = [0]
+    weights = []
+    for mesh in mesh_list:
+        node = mesh.GetNode()
+        mesh_weights = extract_fbx_skinning_data(mesh)
+                
+        weights.extend(mesh_weights[:])
+        vertex_offset += len(mesh_weights)
+        vertex_offset_list.append(vertex_offset)
+
+    return weights, vertex_offset_list
+
+def process_mesh_skeleton_hierarchy(scene, mesh_list):
+    #TODO: merge skeletons when len(mesh_list) > 0
+    mesh = mesh_list[0]
+    node = mesh.GetNode()
+
+    # find a bone referenced by the skin deform for this mesh
+    cluster = mesh.GetDeformer(0, FbxDeformer.eSkin).GetCluster(0)
+    mesh_bone = cluster.GetLink()
+    
+    # find the root node of the skeleton that the bone belongs to
+    skeleton_list = generate_skeleton_list(scene)
+    skeleton_root = None
+
+    for bone in skeleton_list:
+        if bone.FindChild(mesh_bone.GetName()):
+            skeleton_root = bone
+            break
+
+    skeleton_hierarchy = []        
+    generate_bone_list_from_hierarchy(skeleton_root, skeleton_hierarchy)
+
+    return skeleton_hierarchy
 
 # #####################################################
 # Parse - Scene (scene output)
