@@ -33,11 +33,19 @@ def Vector2String(v, no_brackets = False, round_vector = False):
 
 def Vector3String(v, no_brackets = False, round_vector = False):
     if round_vector:
-        v = (round(v[0], 5), round(v[1], 5), round(v[1], 5))
+        v = (round(v[0], 5), round(v[1], 5), round(v[2], 5))
     if no_brackets:
         return '%g,%g,%g' % (v[0], v[1], v[2])
     else:
         return '[ %g, %g, %g ]' % (v[0], v[1], v[2])
+
+def Vector4String(v, no_brackets = False, round_vector = False):
+    if round_vector:
+        v = (round(v[0], 5), round(v[1], 5), round(v[2], 5), round(v[3], 5))
+    if no_brackets:
+        return '%g,%g,%g,%g' % (v[0], v[1], v[2], v[3])
+    else:
+        return '[ %g, %g, %g, %g ]' % (v[0], v[1], v[2], v[3])
 
 def ColorString(c, no_brackets = False):
     if no_brackets:
@@ -100,6 +108,12 @@ def getTextureName(t, force_prefix = False):
     if option_prefix or force_prefix:
         prefix = "Texture_%s_" % t.GetUniqueID()
     return prefix + texture_id
+
+def getAnimationName(a, force_prefix = False):
+    prefix = ""
+    if option_prefix or force_prefix:
+        prefix = "Animation_%s_" % a.GetUniqueID()
+    return prefix + a.GetName()
 
 def getFogName(f, force_prefix = False):
     prefix = ""
@@ -787,6 +801,13 @@ def generate_mesh_string_for_scene_output(node):
     faces    = ",".join(faces)
     uvs      = generate_uvs(uv_values)
 
+    bones   = ""
+    weights = ""
+    indices = ""
+    nskinning_bones   = 0
+    nskinning_weights = 0
+    nskinning_indices = 0
+
     if option_animation:
 
         skinning_weights = process_mesh_skin_weights(mesh_list)
@@ -814,19 +835,8 @@ def generate_mesh_string_for_scene_output(node):
         weights  = ",".join(str(round(w[0],6)) for l in skinning_weights for w in l)
         indices  = ",".join(str(i) for i in skinning_indices)
 
-    else:
+    metadata = [
 
-        nskinning_bones   = 0
-        nskinning_weights = 0
-        nskinning_indices = 0
-        bones   = ""
-        weights = ""
-        indices = ""
-
-    output = [
-
-    '\t' + LabelString( getEmbedName( node, True ) ) + ' : {',
-    '	"metadata"  : {',
     '		"vertices" : ' + str(nvertices) + ',',
     '		"skinWeights" : ' + str(nskinning_weights) + ',',
     '		"skinIndices" : ' + str(nskinning_indices) + ',',
@@ -835,20 +845,56 @@ def generate_mesh_string_for_scene_output(node):
     '		"colors" : ' + str(ncolors) + ',',
     '		"faces" : ' + str(nfaces) + ',',
     '		"uvs" : ' + ArrayString(nuvs),
-    '	},',
-    '	"boundingBox"  : {',
+
+    ]
+
+    skinning = [
+
+    '		"weights" : ' + ArrayString(weights) + ',',   
+    '		"indices" : ' + ArrayString(indices) + ',',   
+    '		"bones" : ' + ArrayString(bones)    
+
+    ]
+
+    aabb = [
+
     '		"min" : ' + ArrayString(aabb_min) + ',',   
     '		"max" : ' + ArrayString(aabb_max),   
+
+    ]
+
+    metadata = generateMultiLineString( metadata, '\n\t\t', 0 )
+    skinning = generateMultiLineString( skinning, '\n\t\t', 0 )
+    aabb = generateMultiLineString( aabb, '\n\t\t', 0 )
+
+    output = [
+
+    '\t' + LabelString( getEmbedName( node, True ) ) + ' : {',
+
+    '	"metadata" :',
+    '	{',
+    metadata,
     '	},',
+    '',
+
+    '	"boundingBox" :',
+    '	{',
+    aabb,
+    '	},',
+    '',
+
+    '	"skinning" :',
+    '	{',
+    skinning,
+    '	},',
+    '',
+
     '	"scale" : ' + str( 1 ) + ',',   
     '	"materials" : ' + ArrayString("") + ',',   
     '	"vertices" : ' + ArrayString(vertices) + ',',   
     '	"normals" : ' + ArrayString(normals) + ',',   
     '	"colors" : ' + ArrayString(colors) + ',',   
     '	"uvs" : ' + ArrayString(uvs) + ',',   
-    '	"skinWeights" : ' + ArrayString(weights) + ',',   
-    '	"skinIndices" : ' + ArrayString(indices) + ',',   
-    '	"skinBones" : ' + ArrayString(bones) + ',',   
     '	"faces" : ' + ArrayString(faces),
     '}'
 
@@ -1725,31 +1771,153 @@ def generate_scene_objects_string(scene):
     return "\n".join(object_list), object_count
 
 # #####################################################
-# Parse - Animation
+# Parse - Poses
 # #####################################################
-def generate_skeleton_list_from_hierarchy(node, skeleton_list):
-    if node.GetNodeAttribute() == None:
-        pass
-    else:
-        attribute_type = (node.GetNodeAttribute().GetAttributeType())
-        if attribute_type == FbxNodeAttribute.eSkeleton:
-            skeleton_list.append(node)
-            return
-    for i in range(node.GetChildCount()):
-        generate_skeleton_list_from_hierarchy(node.GetChild(i), skeleton_list)
+def generate_pose_node_string(pose, node_index, padding):
+    node = pose.GetNode(node_index)
+    transform = pose.GetMatrix(node_index)
 
-def generate_skeleton_list(scene):
-    skeleton_list = []
-    node = scene.GetRootNode()
-    if node:
-        for i in range(node.GetChildCount()):
-            generate_skeleton_list_from_hierarchy(node.GetChild(i), skeleton_list)
-    return skeleton_list
+    t = FbxVector4()
+    q = FbxQuaternion()
+    sh = FbxVector4()
+    sc = FbxVector4()
 
-def generate_bone_list_from_hierarchy(node, bone_list):
-    bone_list.append(node)
-    for i in range(node.GetChildCount()):
-        generate_bone_list_from_hierarchy(node.GetChild(i), bone_list)
+    sign = transform.GetElements(t, q, sh, sc)
+
+    output = [
+
+    LabelString( getObjectName( node ) ) + ' : {',
+    '	"position" : ' + Vector3String( t ) + ',',
+    '	"rotation" : ' + Vector4String( q ) + ',',
+    '	"scale"	   : ' + Vector3String( sc ) + ',',
+    '	"shear"	   : ' + Vector3String( sh ),
+    '},'
+
+    ]
+
+    return generateMultiLineString( output, '\n\t\t', padding )
+
+def generate_pose_string(pose, padding):
+    node_list = []
+
+    for n in range(pose.GetCount()):
+        pose_node = generate_pose_node_string(pose, n, 1)
+        node_list.append(pose_node)
+
+    pose_nodes = generateMultiLineString( node_list, '\n\t\t', padding )
+    if len(pose_nodes) > 1:
+        pose_nodes = pose_nodes[0:(len(pose_nodes)-1)]
+      
+    output = [ '\t{', pose_nodes, '},', ]
+
+    return generateMultiLineString( output, '\n\t\t', padding )
+
+def generate_pose_list(scene):
+    pose_list = []
+    
+    for p in range(scene.GetPoseCount()):
+        pose = scene.GetPose(p)
+
+        pose_string = generate_pose_string(pose, 0)
+        pose_list.append(pose_string)
+
+    return pose_list
+
+# #####################################################
+# Parse - Animations
+# #####################################################
+def generate_animation_key_list(curve):
+    
+  return []
+
+def generate_animation_curve_string(curve, node, prop):
+    key_list = generate_animation_key_list(curve)
+    keys = generateMultiLineString( key_list, ",\n\n\t", 6 )
+
+    output = [
+    '',
+    '{',
+    '	"modifies" : ' + LabelString( getObjectName( node ) ) + ',',
+    '	"property" : ' + LabelString( prop ) + ',',
+    '	"keys" : [',
+    keys,
+    '	]',
+    '}'
+    ]
+
+    return generateMultiLineString( output, '\n\t\t', 4 )
+
+def generate_animation_curve_list(layer, scene):
+    curve_list = []
+    for n in range(scene.GetNodeCount()):
+        node = scene.GetNode(n)
+        curve = node.LclTranslation.GetCurve(layer, "X")
+        if curve:
+            curve_string = generate_animation_curve_string(curve, node, "pos.x")
+            curve_list.append(curve_string)
+
+    return curve_list
+
+def generate_animation_layer_string(layer, scene):
+    blend_mode_types = ['additive', 'override']
+    blend_mode = blend_mode_types[layer.BlendMode.Get()]
+
+    curve_list = generate_animation_curve_list(layer, scene)
+    curves = generateMultiLineString( curve_list, ",\n", 2 )
+
+    output = [
+    '{',
+    '	"blendMode" : ' + LabelString( blend_mode ) + ',',
+    '	"blendWeight" : ' + str( layer.Weight.Get() / 100 ) + ',',
+    '	"curves" :',
+    '	[',
+    curves,
+    '	]',
+    '}'
+    ]
+
+    return generateMultiLineString( output, '\n\t\t', 2 )
+
+def generate_animation_layers_list(animation, scene):
+    layer_list = []
+    layer_count = animation.GetSrcObjectCount(FbxAnimLayer.ClassId)
+    for i in range(layer_count):
+        layer = scene.GetSrcObject(FbxAnimLayer.ClassId) 
+        layer_string = generate_animation_layer_string(layer, scene)
+        layer_list.append(layer_string)
+
+    return layer_list
+
+def generate_animation_string(animation, scene):
+    time_span = animation.GetLocalTimeSpan() 
+    start_time = time_span.GetStart()
+    stop_time = time_span.GetStop()
+
+    layer_list = generate_animation_layers_list(animation, scene)
+    layers = generateMultiLineString( layer_list, ",\n\t", 0 )
+
+    output = [
+    '\t' + LabelString( getAnimationName( animation, True ) ) + ' : {',
+    '	"start" : ' + str( start_time.GetSecondDouble() ) + ',',
+    '	"stop" : ' + str( stop_time.GetSecondDouble() ) + ',',
+    '	"layers" :',
+    '	[',
+    layers,
+    '	]',
+    '}'
+    ]
+
+    return generateMultiLineString( output, '\n\t\t', 0 )
+
+def generate_animation_list(scene):
+    animation_list = []
+    animation_count = scene.GetSrcObjectCount(FbxAnimStack.ClassId)
+    for i in range(animation_count):
+        stack = scene.GetSrcObject(FbxAnimStack.ClassId) 
+        animation_string = generate_animation_string(stack, scene)
+        animation_list.append(animation_string)
+
+    return animation_list
 
 def extract_animation(scene):
     global_settings = scene.GetGlobalSettings()
@@ -1779,11 +1947,7 @@ def extract_animation(scene):
     layer = stack.GetSrcObject(FbxAnimLayer.ClassId, 0)
     print '%s animation layers' % scene.GetSrcObjectCount(FbxAnimLayer.ClassId)
     print stack.GetName()
-
-    pose = scene.GetPose(0)
-    if pose:
-        print '\nis pose 0 a bind pose? %s' % pose.IsBindPose()
-    pose = None
+    
 
     return
 
@@ -2028,6 +2192,30 @@ def get_geometry_transform(node):
     matrix.SetTRS(t,r,s)
     return matrix
 
+def generate_skeleton_list_from_hierarchy(node, skeleton_list):
+    if node.GetNodeAttribute() == None:
+        pass
+    else:
+        attribute_type = (node.GetNodeAttribute().GetAttributeType())
+        if attribute_type == FbxNodeAttribute.eSkeleton:
+            skeleton_list.append(node)
+            return
+    for i in range(node.GetChildCount()):
+        generate_skeleton_list_from_hierarchy(node.GetChild(i), skeleton_list)
+
+def generate_skeleton_list(scene):
+    skeleton_list = []
+    node = scene.GetRootNode()
+    if node:
+        for i in range(node.GetChildCount()):
+            generate_skeleton_list_from_hierarchy(node.GetChild(i), skeleton_list)
+    return skeleton_list
+
+def generate_bone_list_from_hierarchy(node, bone_list):
+    bone_list.append(node)
+    for i in range(node.GetChildCount()):
+        generate_bone_list_from_hierarchy(node.GetChild(i), bone_list)
+
 # #####################################################
 # Parse - Skinning
 # #####################################################
@@ -2109,7 +2297,7 @@ def process_mesh_skeleton_hierarchy(scene, mesh_list):
     skeleton_root = None
 
     for bone in skeleton_list:
-        if bone.FindChild(mesh_bone.GetName()):
+        if bone == mesh_bone or bone.FindChild(mesh_bone.GetName()):
             skeleton_root = bone
             break
 
@@ -2160,6 +2348,18 @@ def extract_scene(scene, filename):
     #TODO: extract fog info from scene
     deffog = LabelString("")
 
+    poses = ""
+    animations = ""
+    if option_animation:
+        pose_list = generate_pose_list( scene )
+        poses = generateMultiLineString( pose_list, ",\n\n\t", 0 )
+
+        if len(poses) > 1:
+            poses = poses[0:(len(poses)-1)]
+
+        animation_list = generate_animation_list( scene )
+        animations = generateMultiLineString( animation_list, ",\n\n\t", 0 )
+
     geometries = generateMultiLineString( geometries, ",\n\n\t", 0 )
     materials = generateMultiLineString( materials, ",\n\n\t", 0 )
     textures = generateMultiLineString( textures, ",\n\n\t", 0 )
@@ -2170,7 +2370,7 @@ def extract_scene(scene, filename):
 
     '{',
     '	"metadata": {',
-    '		"formatVersion" : 3.2,',
+    '		"formatVersion" : 4.0,',
     '		"type"		: "scene",',
     '		"generatedBy"	: "convert-to-threejs.py",',
     '		"objects"       : ' + str(nobjects) + ',',
@@ -2210,6 +2410,18 @@ def extract_scene(scene, filename):
     '	"embeds" :',
     '	{',
     '\t' + 	embeds,
+    '	},',
+    '',
+
+    '	"poses" :',
+    '	[',
+    '\t' + 	poses,
+    '	],',
+    '',
+
+    '	"animations" :',
+    '	{',
+    '\t' + 	animations,
     '	},',
     '',
 
