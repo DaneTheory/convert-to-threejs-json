@@ -788,32 +788,38 @@ def generate_mesh_string_for_scene_output(node):
     uvs      = generate_uvs(uv_values)
 
     if option_animation:
-        skinning_weights, skinning_offsets = process_mesh_skin_weights(mesh_list)
-      
+
+        skinning_weights = process_mesh_skin_weights(mesh_list)
         skinning_indices = []
-        skeleton_hierarchy = process_mesh_skeleton_hierarchy(scene, mesh_list)
+        skinning_bones = process_mesh_skeleton_hierarchy(scene, mesh_list)
+
         for i in range(len(skinning_weights)):
             vertex_weights = skinning_weights[i]
             for j in range(len(vertex_weights)):
                 weight = vertex_weights[j]
                 if weight[0] > 0:
                     node = weight[1].GetLink()
-                    for k in range(len(skeleton_hierarchy)):
-                        bone = skeleton_hierarchy[k]
+                    for k in range(len(skinning_bones)):
+                        bone = skinning_bones[k]
                         if bone == node:
                             skinning_indices.append(k)
                 else:
                     skinning_indices.append(0)
 
-        print ArrayString(",".join(n.GetName() for n in skeleton_hierarchy))
-
+        nskinning_bones   = len(skinning_bones)
         nskinning_weights = len(skinning_weights) * 2
         nskinning_indices = len(skinning_indices)
+
+        bones    = ",".join(LabelString(getObjectName(b)) for b in skinning_bones)
         weights  = ",".join(str(round(w[0],6)) for l in skinning_weights for w in l)
         indices  = ",".join(str(i) for i in skinning_indices)
+
     else:
+
+        nskinning_bones   = 0
         nskinning_weights = 0
         nskinning_indices = 0
+        bones   = ""
         weights = ""
         indices = ""
 
@@ -824,6 +830,7 @@ def generate_mesh_string_for_scene_output(node):
     '		"vertices" : ' + str(nvertices) + ',',
     '		"skinWeights" : ' + str(nskinning_weights) + ',',
     '		"skinIndices" : ' + str(nskinning_indices) + ',',
+    '		"skinBones" : ' + str(nskinning_bones) + ',',
     '		"normals" : ' + str(nnormals) + ',',
     '		"colors" : ' + str(ncolors) + ',',
     '		"faces" : ' + str(nfaces) + ',',
@@ -841,6 +848,7 @@ def generate_mesh_string_for_scene_output(node):
     '	"uvs" : ' + ArrayString(uvs) + ',',   
     '	"skinWeights" : ' + ArrayString(weights) + ',',   
     '	"skinIndices" : ' + ArrayString(indices) + ',',   
+    '	"skinBones" : ' + ArrayString(bones) + ',',   
     '	"faces" : ' + ArrayString(faces),
     '}'
 
@@ -2085,7 +2093,7 @@ def process_mesh_skin_weights(mesh_list):
         vertex_offset += len(mesh_weights)
         vertex_offset_list.append(vertex_offset)
 
-    return weights, vertex_offset_list
+    return weights
 
 def process_mesh_skeleton_hierarchy(scene, mesh_list):
     #TODO: merge skeletons when len(mesh_list) > 0
