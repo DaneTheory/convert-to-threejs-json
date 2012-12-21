@@ -102,11 +102,18 @@ def getMaterialName(m, force_prefix = False):
     return prefix + m.GetName()
 
 def getTextureName(t, force_prefix = False):
-    texture_file = t.GetFileName()
-    texture_id = os.path.splitext(os.path.basename(texture_file))[0]
+    if type(t) is FbxFileTexture:
+        texture_file = t.GetFileName()
+        texture_id = os.path.splitext(os.path.basename(texture_file))[0]
+    else:
+        texture_id = t.GetName()
+        if texture_id == "_empty_":
+            texture_id = ""
     prefix = ""
     if option_prefix or force_prefix:
         prefix = "Texture_%s_" % t.GetUniqueID()
+        if len(texture_id) == 0:
+            prefix = prefix[0:len(prefix)-1]
     return prefix + texture_id
 
 def getAnimationName(a, force_prefix = False):
@@ -426,10 +433,15 @@ def generate_texture_string(texture):
     wrap_v = texture.GetWrapModeV()
     offset = texture.GetUVTranslation()
 
+    if type(texture) is FbxFileTexture:
+        url = texture.GetFileName()
+    else:
+        url = getTextureName( texture )
+
     output = [
 
     '\t' + LabelString( getTextureName( texture, True ) ) + ': {',
-    '	"url"    : ' + LabelString( texture.GetFileName() ) + ',',
+    '	"url"    : ' + LabelString( url ) + ',',
     '	"repeat" : ' + Vector2String( (1,1) ) + ',',
     '	"offset" : ' + Vector2String( texture.GetUVTranslation() ) + ',',
     '	"magFilter" : ' + LabelString( "LinearFilter" ) + ',',
