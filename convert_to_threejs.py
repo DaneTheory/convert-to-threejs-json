@@ -204,7 +204,6 @@ def generate_bounding_box(vertices):
 
     return [minx, miny, minz], [maxx, maxy, maxz]
 
-    
 # #####################################################
 # Generate - Triangles 
 # #####################################################
@@ -1324,7 +1323,6 @@ def generate_mesh_face(mesh, polygon_index, vertex_indices, normals, colors, uv_
             faceData.append(index)
 
     return ",".join( map(str, faceData) ) 
-
 
 # #####################################################
 # Generate - Mesh List 
