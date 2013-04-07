@@ -15,7 +15,7 @@ Utility for converting model files to the Three.js JSON format
 convert_to_threejs.py [source_file] [output_file] [options]
 
 Options:
-  -t, --triangulate       force quad geometry into triangles
+  -t, --triangulate       force non-triangle geometry into triangles
   -x, --ignore-textures   don't include texture references in output file
   -u, --force-prefix      prefix all object names in output file to ensure uniqueness
   -f, --flatten-scene     merge all geometries and apply node transforms
