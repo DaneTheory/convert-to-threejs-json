@@ -15,13 +15,13 @@ Utility for converting model files to the Three.js JSON format
 convert_to_threejs.py [source_file] [output_file] [options]
 
 Options:
-  -t, --triangulate       force quad geometry into triangles", default=False)
-  -x, --ignore-textures   don't include texture references in output file", default=False)
-  -u, --force-prefix      prefix all object names in output file to ensure uniqueness", default=False)
-  -f, --flatten-scene     merge all geometries and apply node transforms", default=False)
-  -c, --add-camera        include default camera in output scene", default=False)
-  -l, --add-light         include default light in output scene", default=False)
-  -p, --pretty-print      prefix all object names in output file", default=False)
+  -t, --triangulate       force quad geometry into triangles
+  -x, --ignore-textures   don't include texture references in output file
+  -u, --force-prefix      prefix all object names in output file to ensure uniqueness
+  -f, --flatten-scene     merge all geometries and apply node transforms
+  -c, --add-camera        include default camera in output scene
+  -l, --add-light         include default light in output scene
+  -p, --pretty-print      prefix all object names in output file
 ```
 
 ## Current Limitations
