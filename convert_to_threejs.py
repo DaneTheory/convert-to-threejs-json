@@ -379,7 +379,7 @@ def generate_material_object(material):
         }
 
     else:
-      print "Unknown type of Material", getMaterialName(material)
+        print "Unknown type of Material", getMaterialName(material)
 
     # default to Lambert Material if the current Material type cannot be handeled
     if not material_type:
@@ -536,7 +536,6 @@ def extract_material_textures(material_property, texture_dict):
                     if texture:
                         texture_object = generate_texture_object(texture)
                         texture_name = getTextureName( texture, True )
-                        print texture_name
                         texture_dict[texture_name] = texture_object
         else:
             # no layered texture simply get on the property
@@ -1684,15 +1683,6 @@ def generate_default_camera():
 
 def generate_camera_object(node):
     camera = node.GetNodeAttribute()
-
-    target_node = node.GetTarget()
-    target = ""
-    if target_node:
-        transform = target.EvaluateLocalTransform()
-        target = transform.GetT()
-    else:
-        target = camera.InterestPosition.Get()
-
     position = camera.Position.Get()
   
     projection_types = [ "perspective", "orthogonal" ]
