@@ -2,6 +2,10 @@
 
 Utility for converting model files to the Three.js JSON format
 
+------
+
+Now a part of the Three.js library: (https://github.com/mrdoob/three.js/tree/master/utils/converters/fbx)
+
 ## Supported Formats
 
 * Fbx (.fbx)
